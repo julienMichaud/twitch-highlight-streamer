@@ -8,8 +8,10 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/twitch"
 )
@@ -63,16 +65,24 @@ func getToken() (string, error) {
 	return token.AccessToken, nil
 }
 
-func requestStreamer(data *TwitchResponse, pagination string, token string) error {
+func requestStreamer(data *TwitchResponse, pagination string, lang, token string) error {
 
-	url := "https://api.twitch.tv/helix/streams?language=fr&first=100"
+	if lang == "" {
+		lang = "fr"
+	}
+
+	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?language=%s&first=100", lang)
 	var bearer = "Bearer " + token
 
 	if pagination != "" {
-		url = fmt.Sprintf("https://api.twitch.tv/helix/streams?language=fr&first=100&after=%s", pagination)
+		url = fmt.Sprintf(url+"&after=%s", pagination)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return err
+	}
 	req.Header.Add("Authorization", bearer)
 	req.Header.Add("Client-Id", clientID)
 
@@ -80,37 +90,65 @@ func requestStreamer(data *TwitchResponse, pagination string, token string) erro
 	resp, err := client.Do(req)
 
 	if err != nil {
-		log.Println("Error on response.\n[ERROR] -", err)
+		return err
 	}
 	defer resp.Body.Close()
+
+	log.Printf(resp.Status)
 
 	body, err := ioutil.ReadAll(resp.Body)
 
 	json.Unmarshal(body, &data)
 
 	if err != nil {
-		panic(err.Error())
+		return err
 	}
+	return nil
 
-	return err
 }
 
-func getStreamers() error {
+func getStreamers(c *gin.Context) {
 	var data TwitchResponse
 	mylist := StreamerList{}
+	lang := c.Query("lang")
+	minViewers := c.Query("minviewers")
+	maxViewers := c.Query("maxviewers")
+
+	log.Printf("%s", minViewers)
+	log.Printf("%s", maxViewers)
+
+	if minViewers == "" {
+		minViewers = "1"
+	}
+
+	if maxViewers == "" {
+		maxViewers = "10"
+	}
+
+	intMinViewers, err := strconv.Atoi(minViewers)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"could not convert minviewers param to int": err})
+	}
+
+	intMaxViewers, err := strconv.Atoi(maxViewers)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"could not convert maxviewers param to int": err})
+	}
 
 	token, err := getToken()
 	if err != nil {
-		return err
+		c.JSON(http.StatusBadGateway, gin.H{"error": err})
 	}
 
 	previousPagination := ""
 	pagination := true
 
-	requestStreamer(&data, "", token)
-
 	for pagination {
-		requestStreamer(&data, data.Pagination.Cursor, token)
+		requestStreamer(&data, data.Pagination.Cursor, lang, token)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err})
+			return
+		}
 		nextPagination := data.Pagination.Cursor
 
 		if previousPagination == nextPagination {
@@ -121,7 +159,7 @@ func getStreamers() error {
 		}
 		for _, v := range data.Data {
 
-			if v.ViewerCount <= 10 {
+			if v.ViewerCount >= intMinViewers && v.ViewerCount <= intMaxViewers {
 				mylist.AddStreamer(Streamer{UserName: v.UserName, ViewerCount: v.ViewerCount, GameName: v.GameName})
 			}
 
@@ -129,11 +167,18 @@ func getStreamers() error {
 
 	}
 
+	if len(mylist.Streamers) == 0 {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"streamer": "no streamer found"})
+		return
+	}
+
 	chosenOne := rand.Intn(len(mylist.Streamers))
 
 	streamer := mylist.Streamers[chosenOne]
 
-	fmt.Printf("https://twitch.tv/%s\n", streamer.UserName)
+	c.JSON(http.StatusOK, gin.H{
+		"streamer": streamer.UserName,
+		"viewers":  streamer.ViewerCount})
 
-	return nil
 }

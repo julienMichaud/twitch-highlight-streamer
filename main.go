@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -14,7 +15,9 @@ var (
 )
 
 func main() {
+	router := gin.Default()
+	router.GET("/streamer", getStreamers)
 
-	getStreamers()
+	router.Run("localhost:8080")
 
 }

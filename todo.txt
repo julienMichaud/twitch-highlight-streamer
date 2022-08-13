@@ -1,5 +1,3 @@
-serve response with api 
-chose language streamer (by default french)
-chose max number of viewers ? by default equal or less than 10
+mettre en place du cache
 
 create goroutine that change result every one hour ? 
