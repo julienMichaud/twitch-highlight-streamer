@@ -1,3 +1,3 @@
-mettre en place du cache
-
+si cache avec cle pays eiste, le recuperer au lieu de faire les curls 
+sinon, faire les curls et meetre en cahce
 create goroutine that change result every one hour ? 
