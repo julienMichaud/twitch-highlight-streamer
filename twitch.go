@@ -1,33 +1,27 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2/clientcredentials"
-	"golang.org/x/oauth2/twitch"
+	"github.com/go-redis/redis"
 )
 
-func getToken() (string, error) {
-	oauth2Config = &clientcredentials.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		TokenURL:     twitch.Endpoint.TokenURL,
-	}
+// @BasePath /
 
-	token, err := oauth2Config.Token(context.Background())
-	if err != nil {
-		return "", err
-	}
-
-	return token.AccessToken, nil
-}
-
+// getStreamers godoc
+// @Summary     /streamer?lang=fr&minviewers=1&maxviewers=10
+// @Schemes     http https
+// @Description Request a random streamer from a country
+// @Produce     json
+// @Param       lang       query    string false "Language of the streamer, should be an ISO code like fr,de,it. Default to fr"
+// @Param       minviewers query    string false "Minimum number of viewers you want the streamer to have. Default to 1"
+// @Param       maxviewers query    string false "Maximum number of viewers you want the streamer to have. Default to 10"
+// @Success     200        {object} Streamer
+// @Router      /streamer [get]
 func getStreamers(c *gin.Context) {
 
 	token, err := getToken()
@@ -42,6 +36,10 @@ func getStreamers(c *gin.Context) {
 	lang := c.Query("lang")
 	minViewers := c.Query("minviewers")
 	maxViewers := c.Query("maxviewers")
+
+	if lang == "" {
+		lang = "fr"
+	}
 
 	if minViewers == "" {
 		minViewers = "1"
@@ -65,59 +63,51 @@ func getStreamers(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err})
 	}
 
-	previousPagination := ""
-	pagination := true
+	val, err := rdb.Get(lang).Result()
 
-	// val, err := rdb.Get(lang).Result() TO DO
-	// if err != nil {
-	// 	c.JSON(http.StatusBadGateway, gin.H{"error": err})
-	// }
+	if err == redis.Nil {
+		previousPagination := ""
+		pagination := true
+		log.Printf("streamer list %s not on redis, querying twitch api and add them on redis after", lang)
+		for pagination {
+			err := requestStreamer(&data, data.Pagination.Cursor, lang, token)
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": err})
+				return
+			}
+			nextPagination := data.Pagination.Cursor
 
-	for pagination {
-		requestStreamer(&data, data.Pagination.Cursor, lang, token)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err})
-			return
+			if previousPagination == nextPagination {
+				pagination = false
+			} else {
+				previousPagination = nextPagination
+				nextPagination = ""
+			}
+			for _, v := range data.Data {
+				mylist.AddStreamer(Streamer{UserName: v.UserName, ViewerCount: v.ViewerCount, GameName: v.GameName})
+			}
+
 		}
-		nextPagination := data.Pagination.Cursor
+		putStreamerListOnRedis(mylist, lang)
 
-		if previousPagination == nextPagination {
-			pagination = false
-		} else {
-			previousPagination = nextPagination
-			nextPagination = ""
-		}
-		for _, v := range data.Data {
-			mylist.AddStreamer(Streamer{UserName: v.UserName, ViewerCount: v.ViewerCount, GameName: v.GameName})
-			log.Printf(v.UserName)
-		}
-
+	} else if err != nil {
+		log.Print(err)
 	}
 
-	e, err := json.Marshal(mylist)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": err})
-		return
-	}
+	valToByte := []byte(val)
 
-	rdb.Set("fr", e, 10*time.Minute).Err()
+	err = json.Unmarshal(valToByte, &mylist)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": err})
-		return
+		c.JSON(http.StatusBadGateway, gin.H{"error": err})
 	}
 
 	streamer, err := mylist.GetStreamer(intMinViewers, intMaxViewers)
-
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": err})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"streamer": streamer.UserName,
-		"viewers":  streamer.ViewerCount})
+	c.JSON(http.StatusOK, streamer)
 
 }

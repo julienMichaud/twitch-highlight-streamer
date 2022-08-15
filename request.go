@@ -9,10 +9,6 @@ import (
 
 func requestStreamer(data *TwitchResponse, pagination string, lang, token string) error {
 
-	if lang == "" {
-		lang = "fr"
-	}
-
 	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?language=%s&first=100", lang)
 	var bearer = "Bearer " + token
 

@@ -1,0 +1,52 @@
+definitions:
+  main.Streamer:
+    properties:
+      gameName:
+        type: string
+      userName:
+        type: string
+      viewerCount:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: mymail
+    url: http://www.swagger.io/support
+  description: This is an api to retrieve a random streamer on Twtich.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: twitch-highlight-streamer
+  version: "1.0"
+paths:
+  /streamer:
+    get:
+      description: Request a random streamer from a country
+      parameters:
+      - description: Language of the streamer, should be an ISO code like fr,de,it.
+          Default to fr
+        in: query
+        name: lang
+        type: string
+      - description: Minimum number of viewers you want the streamer to have. Default
+          to 1
+        in: query
+        name: minviewers
+        type: string
+      - description: Maximum number of viewers you want the streamer to have. Default
+          to 10
+        in: query
+        name: maxviewers
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Streamer'
+      summary: /streamer?lang=fr&minviewers=1&maxviewers=10
+swagger: "2.0"
